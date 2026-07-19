@@ -1,0 +1,65 @@
+name: Changelog
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: 'Preview changelog without committing'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  generate-changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history required to compare commits for changelog generation
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate changelog (preview)
+        if: ${{ github.event.inputs.preview == 'true' }}
+        run: node scripts/generate-changelog.js --preview
+
+      - name: Generate and commit changelog
+        if: ${{ github.event.inputs.preview != 'true' }}
+        run: |
+          node scripts/generate-changelog.js
+
+          # Only commit if CHANGELOG.md was actually modified
+          if git diff --quiet CHANGELOG.md; then
+            echo "No changelog changes to commit."
+            exit 0
+          fi
+
+          git add CHANGELOG.md
+          git commit -m "docs(changelog): update CHANGELOG.md for $(node -p "require('./package.json').version") [skip ci]"
+          git push origin main
+
+      - name: Upload changelog artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: CHANGELOG.md
+          if-no-files-found: warn
